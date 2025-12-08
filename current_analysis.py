@@ -359,8 +359,9 @@ def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, depa
 
     try:
         # create pool and map the function to the args (using threadpool)
-        with mp.pool.ThreadPool(processes=num_processes) as pool:
+        with mp.pool.ThreadPool(num_processes) as pool:
             combined_results = pool.starmap(testing_func, process_args)
+
     except Exception as e:
         logging.error(f"Error during multiprocessing: {str(e)}")
         raise e
@@ -376,9 +377,6 @@ def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, depa
     logging.info(f"Combined travel times: {len(combined_travel_times)} total itineraries")
 
     return combined_travel_times
-
-
-
 
 def geojson_to_gdf(geojson_path):
     """
