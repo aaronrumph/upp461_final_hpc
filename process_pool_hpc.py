@@ -238,13 +238,13 @@ def split_gdf_into_chunks(gdf, number_of_chunks, ideal_chunk_size):
 
 
 @timer
-def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf, destinations_gdf,
+def calculate_itineraries_chunk(pbf_path, gtfs_paths, transport_modes, origins_gdf, destinations_gdf,
                                 departure_datetime, chunk_id):
     """
-    Worker function to calculate itineraries for a chunk of origins/destinations.
-    NO TIME LIMIT - calculates all possible routes.
+    Worker function that initializes its own transport network and calculates detailed itineraries.
 
-    :param transport_network: the r5py transportation network | r5py.R5TransportNetwork
+    :param pbf_path: path to OSM PBF file | str
+    :param gtfs_paths: list of paths to GTFS zip files | list[str]
     :param transport_modes: list of transport modes to consider | r5py.TransportMode
     :param origins_gdf: GeoDataFrame of origin points for this chunk | geopandas.GeoDataFrame
     :param destinations_gdf: GeoDataFrame of destination points for this chunk | geopandas.GeoDataFrame
@@ -253,11 +253,15 @@ def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf,
     """
     chunk_start_time = time.perf_counter()
 
+    # each worker builds its own network from file paths
+    logging.info(f"[Chunk {chunk_id}] Building transport network in worker process")
+    transport_network = r5py.TransportNetwork(osm_pbf=pbf_path, gtfs=gtfs_paths)
+
     logging.info(
         f"[Chunk {chunk_id}] Processing {len(origins_gdf)} origins x {len(destinations_gdf)} destinations = {len(origins_gdf) * len(destinations_gdf)} OD pairs")
 
     try:
-        # uses the r5py detailed itineraries function to get all possible routes for the chunk
+        # calculate detailed itineraries for the chunk
         detailed_itineraries = r5py.DetailedItineraries(
             transport_network=transport_network,
             origins=origins_gdf,
@@ -281,26 +285,18 @@ def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf,
 
 # calculate simple travel times for chunk
 @timer
-def calculate_travel_times_chunk(transport_network, transport_modes, origins_gdf, destinations_gdf,
+def calculate_travel_times_chunk(pbf_path, gtfs_paths, transport_modes, origins_gdf, destinations_gdf,
                                  departure_datetime, chunk_id):
-    """
-    Worker function to calculate itineraries for a chunk of origins/destinations.
-    NO TIME LIMIT - calculates all possible routes.
-
-    :param transport_network: the r5py transportation network | r5py.R5TransportNetwork
-    :param transport_modes: list of transport modes to consider | r5py.TransportMode
-    :param origins_gdf: GeoDataFrame of origin points for this chunk | geopandas.GeoDataFrame
-    :param destinations_gdf: GeoDataFrame of destination points for this chunk | geopandas.GeoDataFrame
-    :param departure_datetime: datetime for departure time | datetime.datetime
-    :param chunk_id: identifier for this chunk | int
-    """
+    """Worker function that initializes its own transport network."""
     chunk_start_time = time.perf_counter()
 
-    logging.info(
-        f"[Chunk {chunk_id}] Processing {len(origins_gdf)} origins x {len(destinations_gdf)} destinations = {len(origins_gdf) * len(destinations_gdf)} OD pairs")
+    # each worker builds its own network
+    logging.info(f"[Chunk {chunk_id}] Building transport network in worker process")
+    transport_network = r5py.TransportNetwork(osm_pbf=pbf_path, gtfs=gtfs_paths)
+
+    logging.info(f"[Chunk {chunk_id}] Processing {len(origins_gdf)} origins x {len(destinations_gdf)} destinations")
 
     try:
-        # uses the r5py detailed itineraries function to get all possible routes for the chunk
         travel_times = r5py.TravelTimeMatrix(
             transport_network=transport_network,
             origins=origins_gdf,
@@ -311,28 +307,20 @@ def calculate_travel_times_chunk(transport_network, transport_modes, origins_gdf
         )
 
         chunk_elapsed = time.perf_counter() - chunk_start_time
-        logging.info(
-            f"[Chunk {chunk_id}] completed: {len(travel_times)} itineraries calculated in {chunk_elapsed:.1f} seconds")
+        logging.info(f"[Chunk {chunk_id}] completed in {chunk_elapsed:.1f} seconds")
         return travel_times, chunk_elapsed
 
     except Exception as e:
         chunk_elapsed = time.perf_counter() - chunk_start_time
-        logging.error(f"[Chunk {chunk_id}] Error after {chunk_elapsed:.1f} seconds: {str(e)}")
+        logging.error(f"[Chunk {chunk_id}] Error: {str(e)}")
         return None, chunk_elapsed
 
 
-def run_analysis(testing_func, gtfs_folders, pbf_data, origins_gdf, destinations_gdf, departure_datetime, transport_modes):
-    """
-    Runs the full analysis by splitting the origins/destinations into chunks and processing them in parallel.
+def run_analysis(testing_func, gtfs_folders, pbf_data, origins_gdf, destinations_gdf, departure_datetime,
+                 transport_modes):
+    """Runs analysis with multiprocessing by passing paths instead of network objects."""
 
-    :param r5py_network: r5py transportation network | r5py.R5TransportNetwork
-    :param origins_gdf: GeoDataFrame of origin points | geopandas.GeoDataFrame
-    :param destinations_gdf: GeoDataFrame of destination points | geopandas.GeoDataFrame
-    :param departure_datetime: datetime for departure time | datetime.datetime
-    :param transport_modes: list of transport modes to consider | r5py.TransportMode
-    """
-
-    # calculate ideal chunking strategy
+    # calculate chunking strategy
     origin_or_destination, number_of_chunks, ideal_chunk_size = calculate_ideal_chunk_size(
         len(origins_gdf), len(destinations_gdf)
     )
@@ -340,45 +328,37 @@ def run_analysis(testing_func, gtfs_folders, pbf_data, origins_gdf, destinations
     # split gdfs into chunks
     if origin_or_destination == "origin":
         origin_chunks = split_gdf_into_chunks(origins_gdf, number_of_chunks, ideal_chunk_size)
-        destination_chunks = [destinations_gdf] * number_of_chunks  # same destinations for all origin chunks
+        destination_chunks = [destinations_gdf] * number_of_chunks
     else:
         destination_chunks = split_gdf_into_chunks(destinations_gdf, number_of_chunks, ideal_chunk_size)
-        origin_chunks = [origins_gdf] * number_of_chunks  # same origins for all destination chunks
+        origin_chunks = [origins_gdf] * number_of_chunks
 
-    # args for multiprocessing
+    # prepare args
     process_args = []
-
-    # go through each chunk and prepare args
     for chunk_id in range(number_of_chunks):
-        chunk_args = (transport_modes, origin_chunks[chunk_id],
-                      destination_chunks[chunk_id], departure_datetime, chunk_id)
+        chunk_args = (
+            pbf_data,
+            gtfs_folders,
+            transport_modes,
+            origin_chunks[chunk_id],
+            destination_chunks[chunk_id],
+            departure_datetime,
+            chunk_id
+        )
         process_args.append(chunk_args)
 
-    # number of processes to use
     num_processes = min(mp.cpu_count(), number_of_chunks)
 
     try:
-        # create pool and map the function to the args (using threadpool)
-        with mp.pool.Pool(num_processes) as pool:
-            # the network to use
-            r5py_network = setup_r5_network(osm_pbf_path=pbf_data, gtfs_zip_paths=gtfs_folders)
-
-            # insert the network as the first argument for each process
-            process_args = [(r5py_network, *args) for args in process_args]
-
+        with mp.Pool(processes=num_processes) as pool:
             combined_results = pool.starmap(testing_func, process_args)
 
     except Exception as e:
         logging.error(f"Error during multiprocessing: {str(e)}")
         raise e
 
-    # filter out failed chunks and convert to dataframes
-    valid_results = []
-    for chunk_id, (result, chunk_time) in enumerate(combined_results):
-        if result is not None and len(result) > 0:
-            valid_results.append(result)
-
-    # combine results from all chunks
+    # filter and combine results
+    valid_results = [result for result, _ in combined_results if result is not None and len(result) > 0]
     combined_travel_times = pd.concat(valid_results, ignore_index=True)
     logging.info(f"Combined travel times: {len(combined_travel_times)} total itineraries")
 
