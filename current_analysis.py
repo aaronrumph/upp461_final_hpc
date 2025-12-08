@@ -364,9 +364,9 @@ def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, depa
 
         # filter out failed chunks and convert to dataframes
         valid_results = []
-        for result in combined_results:
-            if result is not None and not isinstance(result, tuple):
-                valid_results.append(result[0])
+        for chunk_id, (result, chunk_time) in enumerate(combined_results):
+            if result is not None and len(result) > 0:
+                valid_results.append(result)
 
         # combine results from all chunks
         combined_travel_times = pd.concat(valid_results, ignore_index=True)
