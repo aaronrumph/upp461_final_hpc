@@ -4,8 +4,9 @@
 import logging
 import os
 from functools import wraps
+sys.argv.append(["--max-memory", "95%"])
 
-import r5py
+import r5py # noqa: F401
 import zipfile
 from zipfile import ZipFile, ZIP_DEFLATED
 from pathlib import Path

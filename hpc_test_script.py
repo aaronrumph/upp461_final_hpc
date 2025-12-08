@@ -4,8 +4,10 @@
 import logging
 import os
 from functools import wraps
+import sys
+sys.argv.append(["--max-memory", "95%"])
 
-import r5py
+import r5py # noqa: F401
 import zipfile
 from zipfile import ZipFile, ZIP_DEFLATED
 from pathlib import Path
@@ -462,22 +464,4 @@ if __name__ == "__main__":
         travel_times_df.to_csv(output_csv_path, index=False)
         logging.info(f"Saved travel times for {analysis_name} to {output_csv_path}")
 
-        detailed_itineraries_df = run_analysis(testing_func=calculate_itineraries_chunk,
-                                       r5py_network=current_transportation_network,
-                                       origins_gdf=taz_gdf,
-                                       destinations_gdf=taz_gdf,
-                                       departure_datetime=departure_time,
-                                       transport_modes=transit_transport_modes
-                                       )
-
-        # save results to csv
-        output_data_dir_path = os.path.join(Path(__file__).parent, "output_data")
-        detailed_itineraries_path = os.path.join(output_data_dir_path, "detailed_itineraries")
-
-        # make sure output directory exists
-        os.makedirs(detailed_itineraries_path, exist_ok=True)
-
-        output_csv_path = os.path.join(detailed_itineraries_path, f"{analysis_name}.csv")
-        detailed_itineraries_df.to_csv(output_csv_path, index=False)
-        logging.info(f"Saved travel times for {analysis_name} to {output_csv_path}")
 
