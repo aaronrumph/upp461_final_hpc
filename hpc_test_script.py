@@ -123,14 +123,20 @@ def clean_gtfs_zips_in_directory(gtfs_dir):
     cleaned_zip_paths = []
     # go through each and use the clean function
     for filename in os.listdir(gtfs_dir):
-        if filename.endswith(".zip"):
+        # Skip already-cleaned files and non-zip files
+        if filename.endswith(".zip") and "_cleaned.zip" not in filename:
             zip_path = os.path.join(gtfs_dir, filename)
-            cleaned_zip_path = clean_gtfs_zip(zip_path)
-            cleaned_zip_paths.append(cleaned_zip_path)
+            logging.info(f"Processing: {filename}")  # Add this line
+            try:
+                cleaned_zip_path = clean_gtfs_zip(zip_path)
+                if cleaned_zip_path is not None:
+                    cleaned_zip_paths.append(cleaned_zip_path)
+            except Exception as e:
+                logging.error(f"Failed to process {filename}: {e}")
+                continue
 
     logging.info(f"Cleaned zips in directory: {gtfs_dir}")
     return cleaned_zip_paths
-
 
 # function to setup r5 network
 @timer

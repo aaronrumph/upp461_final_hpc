@@ -54,7 +54,7 @@ for agency_data in transit_agencies["agencies"]:
     current_transit_agencies.append(temp_agency)
 
 # the paths where the gtfs data lives
-current_gtfs_data_dir = os.path.join(Path(__file__).parent, "input_data", "gtfs_data", "current_gtfs")
+current_gtfs_data_dir = os.path.join(Path(__file__).parent, "input_data", "gtfs_data", "current")
 
 
 # now need to download the gtfs data for each agency
