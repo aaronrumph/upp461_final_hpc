@@ -348,12 +348,9 @@ def run_analysis(testing_func, gtfs_folders, pbf_data, origins_gdf, destinations
     # args for multiprocessing
     process_args = []
 
-    # the network to use
-    r5py_network = setup_r5_network(osm_pbf_path=pbf_data, gtfs_zip_paths=gtfs_folders)
-
     # go through each chunk and prepare args
     for chunk_id in range(number_of_chunks):
-        chunk_args = (r5py_network, transport_modes, origin_chunks[chunk_id],
+        chunk_args = (transport_modes, origin_chunks[chunk_id],
                       destination_chunks[chunk_id], departure_datetime, chunk_id)
         process_args.append(chunk_args)
 
@@ -363,6 +360,12 @@ def run_analysis(testing_func, gtfs_folders, pbf_data, origins_gdf, destinations
     try:
         # create pool and map the function to the args (using threadpool)
         with mp.pool.Pool(num_processes) as pool:
+            # the network to use
+            r5py_network = setup_r5_network(osm_pbf_path=pbf_data, gtfs_zip_paths=gtfs_folders)
+
+            # insert the network as the first argument for each process
+            process_args = [(r5py_network, *args) for args in process_args]
+
             combined_results = pool.starmap(testing_func, process_args)
 
     except Exception as e:
