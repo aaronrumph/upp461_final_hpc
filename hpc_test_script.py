@@ -359,9 +359,8 @@ def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, depa
 
     try:
         # create pool and map the function to the args (using threadpool)
-        with ThreadPoolExecutor(max_workers=num_processes) as analysis_executor:
-            combined_results = list(analysis_executor.map(lambda args: testing_func(*args),
-                                                          process_args))
+        with mp.pool.ThreadPool(num_processes) as pool:
+            combined_results = pool.starmap(testing_func, process_args)
 
         # filter out failed chunks and convert to dataframes
         valid_results = []
