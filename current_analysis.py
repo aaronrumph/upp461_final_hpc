@@ -359,24 +359,25 @@ def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, depa
 
     try:
         # create pool and map the function to the args (using threadpool)
-        with mp.pool.ThreadPool(num_processes) as pool:
+        with mp.pool.ThreadPool(processes=num_processes) as pool:
             combined_results = pool.starmap(testing_func, process_args)
-
-        # filter out failed chunks and convert to dataframes
-        valid_results = []
-        for chunk_id, (result, chunk_time) in enumerate(combined_results):
-            if result is not None and len(result) > 0:
-                valid_results.append(result)
-
-        # combine results from all chunks
-        combined_travel_times = pd.concat(valid_results, ignore_index=True)
-        logging.info(f"Combined travel times: {len(combined_travel_times)} total itineraries")
-
-        return combined_travel_times
-
     except Exception as e:
         logging.error(f"Error during multiprocessing: {str(e)}")
         raise e
+
+    # filter out failed chunks and convert to dataframes
+    valid_results = []
+    for chunk_id, (result, chunk_time) in enumerate(combined_results):
+        if result is not None and len(result) > 0:
+            valid_results.append(result)
+
+    # combine results from all chunks
+    combined_travel_times = pd.concat(valid_results, ignore_index=True)
+    logging.info(f"Combined travel times: {len(combined_travel_times)} total itineraries")
+
+    return combined_travel_times
+
+
 
 
 def geojson_to_gdf(geojson_path):
@@ -417,7 +418,14 @@ if __name__ == "__main__":
                                                       gtfs_zip_paths=current_gtfs_zip_files)
 
     # dates to use (based on CMAP model documentation)
-    departure_times = [dt_dt(2025, 12, 9, 0, 30, 0)]
+    departure_times = [dt_dt(2025, 12, 9, 0, 30, 0),
+                       dt_dt(2025, 12, 9, 6, 0, 0),
+                       dt_dt(2025, 12, 9, 7, 0, 0),
+                       dt_dt(2025, 12, 9, 9, 0, 0),
+                       dt_dt(2025, 12, 9, 10, 0, 0),
+                       dt_dt(2025, 12, 9, 14, 00, 0),
+                       dt_dt(2025, 12, 9, 16, 00, 0),
+                       dt_dt(2025, 12, 9, 18, 00, 0)]
 
     # load origins and destinations
     path_to_taz_geojson = os.path.join(Path(__file__).parent, "input_data", "taz_data", "tazs_centroids.geojson")
