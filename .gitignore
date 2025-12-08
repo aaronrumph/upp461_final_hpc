@@ -1,0 +1,34 @@
+﻿# Environment files with API keys
+*.env
+api_keys.env
+
+# Exclude specific files
+trying_r5py.py
+
+# Data directories
+input_data/
+output_data/
+
+# Large geospatial files
+*.pbf
+*.zip
+*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# R5py cache
+AppData/Local/r5py/
