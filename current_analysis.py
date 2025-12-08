@@ -271,7 +271,7 @@ def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf,
         chunk_elapsed = time.perf_counter() - chunk_start_time
         logging.info(
             f"[Chunk {chunk_id}] completed: {len(detailed_itineraries)} itineraries calculated in {chunk_elapsed:.1f} seconds")
-        return detailed_itineraries
+        return detailed_itineraries, chunk_elapsed
 
     except Exception as e:
         chunk_elapsed = time.perf_counter() - chunk_start_time
@@ -313,7 +313,7 @@ def calculate_travel_times_chunk(transport_network, transport_modes, origins_gdf
         chunk_elapsed = time.perf_counter() - chunk_start_time
         logging.info(
             f"[Chunk {chunk_id}] completed: {len(travel_times)} itineraries calculated in {chunk_elapsed:.1f} seconds")
-        return travel_times
+        return travel_times, chunk_elapsed
 
     except Exception as e:
         chunk_elapsed = time.perf_counter() - chunk_start_time
