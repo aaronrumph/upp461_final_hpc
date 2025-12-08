@@ -20,7 +20,7 @@ import datetime
 from concurrent.futures import ThreadPoolExecutor
 import itertools
 
-
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 # timer function to use as decorator
 def timer(func):
@@ -53,14 +53,12 @@ def clean_r5py_cache():
             logging.warning(f"Could not clean r5py cache: {e}")
 
 
-# cleans the gtfs zip by removing empty optional files
 def clean_gtfs_zip(zip_path):
     """
     Removes empty optional GTFS files from a zip that cause R5 validation errors.
     Creates a new cleaned version of the zip file.
 
     :param zip_path: path to zip file
-
     :return: path to cleaned zip file (or original if no cleaning needed)
     """
 
@@ -70,19 +68,34 @@ def clean_gtfs_zip(zip_path):
         "trips.txt", "stop_times.txt"
     }
 
+    # optional files that R5 complains about when empty
+    optional_files_to_check = {
+        "areas.txt", "farezone_attributes.txt", "frequencies.txt",
+        "transfers.txt", "fare_rules.txt", "fare_attributes.txt",
+        "calendar_dates.txt", "attributions.txt", "feed_info.txt",
+        "translations.txt", "levels.txt", "pathways.txt"
+    }
+
     # check if cleaning is needed
     needs_cleaning = False
-    files_to_remove = []
+    files_to_remove = set()
 
     with ZipFile(zip_path, "r") as original_zip:
         for file_info in original_zip.filelist:
             if file_info.filename.endswith(".txt"):
                 base_filename = os.path.basename(file_info.filename)
 
-                # check if file is effectively empty (< 50 bytes, accounting for header row)
-                if file_info.file_size < 50 and base_filename not in required_files:
-                    needs_cleaning = True
-                    files_to_remove.append(file_info.filename)
+                # remove if it's an optional file AND either:
+                # 1. file size is < 100 bytes (empty or header-only)
+                # 2. file has only a header line (check content)
+                if base_filename in optional_files_to_check:
+                    file_content = original_zip.read(file_info.filename).decode('utf-8', errors='ignore')
+                    lines = file_content.strip().split('\n')
+
+                    # remove if: empty, only whitespace, or only has header (1 line)
+                    if len(lines) <= 1 or file_info.file_size < 50:
+                        needs_cleaning = True
+                        files_to_remove.add(file_info.filename)
 
     if not needs_cleaning:
         logging.debug(f"{os.path.basename(zip_path)}: No empty optional files found")
@@ -99,12 +112,16 @@ def clean_gtfs_zip(zip_path):
     with ZipFile(zip_path, "r") as original_zip:
         with ZipFile(cleaned_zip_path, "w", ZIP_DEFLATED) as cleaned_zip:
             for file_info in original_zip.filelist:
+                # skip directories and files marked for removal
+                if file_info.is_dir():
+                    continue
+
                 if file_info.filename not in files_to_remove:
-                    # Copy file to new zip
+                    # Copy file content (not file_info to avoid metadata issues)
                     file_content = original_zip.read(file_info.filename)
-                    cleaned_zip.writestr(file_info.filename, file_content)
+                    cleaned_zip.writestr(file_info.filename, file_content, compress_type=ZIP_DEFLATED)
                 else:
-                    logging.info(f"Removed empty file: {file_info.filename}")
+                    logging.info(f"Removed: {file_info.filename}")
 
     logging.info(f"Created cleaned version: {os.path.basename(cleaned_zip_path)}")
     return cleaned_zip_path
@@ -371,6 +388,8 @@ def geojson_to_gdf(geojson_path):
     :return: GeoDataFrame
     """
     gdf = gpd.read_file(geojson_path)
+    if "id" not in gdf.columns:
+        gdf["id"] = range(len(gdf))
     return gdf
 
 
@@ -378,6 +397,10 @@ if __name__ == "__main__":
     # setup logging
     logging.basicConfig(level=logging.INFO)
     logging.info("Starting current network analysis")
+
+    # reset r5py cache
+    logging.info("Resetting r5py cache")
+    clean_r5py_cache()
 
     # input transportation network data (pbf for streets and gtfs)
     current_gtfs_data_dir = os.path.join(Path(__file__).parent, "input_data", "gtfs_data", "current")

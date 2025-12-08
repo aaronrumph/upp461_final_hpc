@@ -1,4 +1,5 @@
-""" Script to perform analysis on the current network"""
+""" This script is meant to test the performance of the HPC to see whether feasible or not to use detailed
+# itinerary calculations there. It uses a small subset of the data for testing purposes."""
 
 import logging
 import os
@@ -19,12 +20,12 @@ import datetime
 from concurrent.futures import ThreadPoolExecutor
 import itertools
 
-from running_analysis import current_gtfs_data_dir
-
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 # timer function to use as decorator
 def timer(func):
     """ Decorator function to time other functions"""
+
     @wraps(func)
     def wrapper_timer(*args, **kwargs):
         start_time = time.perf_counter()
@@ -33,6 +34,7 @@ def timer(func):
         run_time = end_time - start_time
         logging.info(f"Finished {func.__name__!r} in {run_time:.2f} secs")
         return value
+
     return wrapper_timer
 
 
@@ -50,14 +52,13 @@ def clean_r5py_cache():
         except Exception as e:
             logging.warning(f"Could not clean r5py cache: {e}")
 
-# cleans the gtfs zip by removing empty optional files
+
 def clean_gtfs_zip(zip_path):
     """
     Removes empty optional GTFS files from a zip that cause R5 validation errors.
     Creates a new cleaned version of the zip file.
 
     :param zip_path: path to zip file
-    
     :return: path to cleaned zip file (or original if no cleaning needed)
     """
 
@@ -67,19 +68,34 @@ def clean_gtfs_zip(zip_path):
         "trips.txt", "stop_times.txt"
     }
 
+    # optional files that R5 complains about when empty
+    optional_files_to_check = {
+        "areas.txt", "farezone_attributes.txt", "frequencies.txt",
+        "transfers.txt", "fare_rules.txt", "fare_attributes.txt",
+        "calendar_dates.txt", "attributions.txt", "feed_info.txt",
+        "translations.txt", "levels.txt", "pathways.txt"
+    }
+
     # check if cleaning is needed
     needs_cleaning = False
-    files_to_remove = []
+    files_to_remove = set()
 
     with ZipFile(zip_path, "r") as original_zip:
         for file_info in original_zip.filelist:
             if file_info.filename.endswith(".txt"):
                 base_filename = os.path.basename(file_info.filename)
 
-                # check if file is effectively empty (< 50 bytes, accounting for header row)
-                if file_info.file_size < 50 and base_filename not in required_files:
-                    needs_cleaning = True
-                    files_to_remove.append(file_info.filename)
+                # remove if it's an optional file AND either:
+                # 1. file size is < 100 bytes (empty or header-only)
+                # 2. file has only a header line (check content)
+                if base_filename in optional_files_to_check:
+                    file_content = original_zip.read(file_info.filename).decode('utf-8', errors='ignore')
+                    lines = file_content.strip().split('\n')
+
+                    # remove if: empty, only whitespace, or only has header (1 line)
+                    if len(lines) <= 1 or file_info.file_size < 50:
+                        needs_cleaning = True
+                        files_to_remove.add(file_info.filename)
 
     if not needs_cleaning:
         logging.debug(f"{os.path.basename(zip_path)}: No empty optional files found")
@@ -96,12 +112,16 @@ def clean_gtfs_zip(zip_path):
     with ZipFile(zip_path, "r") as original_zip:
         with ZipFile(cleaned_zip_path, "w", ZIP_DEFLATED) as cleaned_zip:
             for file_info in original_zip.filelist:
+                # skip directories and files marked for removal
+                if file_info.is_dir():
+                    continue
+
                 if file_info.filename not in files_to_remove:
-                    # Copy file to new zip
+                    # Copy file content (not file_info to avoid metadata issues)
                     file_content = original_zip.read(file_info.filename)
-                    cleaned_zip.writestr(file_info.filename, file_content)
+                    cleaned_zip.writestr(file_info.filename, file_content, compress_type=ZIP_DEFLATED)
                 else:
-                    logging.info(f"Removed empty file: {file_info.filename}")
+                    logging.info(f"Removed: {file_info.filename}")
 
     logging.info(f"Created cleaned version: {os.path.basename(cleaned_zip_path)}")
     return cleaned_zip_path
@@ -120,14 +140,20 @@ def clean_gtfs_zips_in_directory(gtfs_dir):
     cleaned_zip_paths = []
     # go through each and use the clean function
     for filename in os.listdir(gtfs_dir):
-        if filename.endswith(".zip"):
+        # Skip already-cleaned files and non-zip files
+        if filename.endswith(".zip") and "_cleaned.zip" not in filename:
             zip_path = os.path.join(gtfs_dir, filename)
-            cleaned_zip_path = clean_gtfs_zip(zip_path)
-            cleaned_zip_paths.append(cleaned_zip_path)
+            logging.info(f"Processing: {filename}")  # Add this line
+            try:
+                cleaned_zip_path = clean_gtfs_zip(zip_path)
+                if cleaned_zip_path is not None:
+                    cleaned_zip_paths.append(cleaned_zip_path)
+            except Exception as e:
+                logging.error(f"Failed to process {filename}: {e}")
+                continue
 
     logging.info(f"Cleaned zips in directory: {gtfs_dir}")
     return cleaned_zip_paths
-
 
 # function to setup r5 network
 @timer
@@ -210,6 +236,7 @@ def split_gdf_into_chunks(gdf, number_of_chunks, ideal_chunk_size):
 
     return chunks
 
+
 @timer
 def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf, destinations_gdf,
                                 departure_datetime, chunk_id):
@@ -255,7 +282,7 @@ def calculate_itineraries_chunk(transport_network, transport_modes, origins_gdf,
 # calculate simple travel times for chunk
 @timer
 def calculate_travel_times_chunk(transport_network, transport_modes, origins_gdf, destinations_gdf,
-                                departure_datetime, chunk_id):
+                                 departure_datetime, chunk_id):
     """
     Worker function to calculate itineraries for a chunk of origins/destinations.
     NO TIME LIMIT - calculates all possible routes.
@@ -294,7 +321,7 @@ def calculate_travel_times_chunk(transport_network, transport_modes, origins_gdf
         return None, chunk_elapsed
 
 
-def run_analysis(r5py_network, origins_gdf, destinations_gdf, departure_datetime, transport_modes):
+def run_analysis(testing_func, r5py_network, origins_gdf, destinations_gdf, departure_datetime, transport_modes):
     """
     Runs the full analysis by splitting the origins/destinations into chunks and processing them in parallel.
 
@@ -318,14 +345,13 @@ def run_analysis(r5py_network, origins_gdf, destinations_gdf, departure_datetime
         destination_chunks = split_gdf_into_chunks(destinations_gdf, number_of_chunks, ideal_chunk_size)
         origin_chunks = [origins_gdf] * number_of_chunks  # same origins for all destination chunks
 
-
     # args for multiprocessing
     process_args = []
 
     # go through each chunk and prepare args
     for chunk_id in range(number_of_chunks):
         chunk_args = (r5py_network, transport_modes, origin_chunks[chunk_id],
-                destination_chunks[chunk_id], departure_datetime, chunk_id)
+                      destination_chunks[chunk_id], departure_datetime, chunk_id)
         process_args.append(chunk_args)
 
     # number of processes to use
@@ -334,7 +360,7 @@ def run_analysis(r5py_network, origins_gdf, destinations_gdf, departure_datetime
     try:
         # create pool and map the function to the args (using threadpool)
         with ThreadPoolExecutor(max_workers=num_processes) as analysis_executor:
-            combined_results = list(analysis_executor.map(lambda args: calculate_travel_times_chunk(*args),
+            combined_results = list(analysis_executor.map(lambda args: testing_func(*args),
                                                           process_args))
 
         # filter out failed chunks and convert to dataframes
@@ -353,6 +379,7 @@ def run_analysis(r5py_network, origins_gdf, destinations_gdf, departure_datetime
         logging.error(f"Error during multiprocessing: {str(e)}")
         raise e
 
+
 def geojson_to_gdf(geojson_path):
     """
     Loads a GeoJSON file into a GeoDataFrame with specified CRS.
@@ -361,12 +388,19 @@ def geojson_to_gdf(geojson_path):
     :return: GeoDataFrame
     """
     gdf = gpd.read_file(geojson_path)
+    if "id" not in gdf.columns:
+        gdf["id"] = range(len(gdf))
     return gdf
+
 
 if __name__ == "__main__":
     # setup logging
     logging.basicConfig(level=logging.INFO)
     logging.info("Starting current network analysis")
+
+    # reset r5py cache
+    logging.info("Resetting r5py cache")
+    clean_r5py_cache()
 
     # input transportation network data (pbf for streets and gtfs)
     current_gtfs_data_dir = os.path.join(Path(__file__).parent, "input_data", "gtfs_data", "current")
@@ -375,21 +409,16 @@ if __name__ == "__main__":
     # first clean the gtfs zips
     current_gtfs_zip_files = clean_gtfs_zips_in_directory(gtfs_dir=current_gtfs_data_dir)
 
+    # remove megabus feed due to known issues
+    current_gtfs_zip_files = [f for f in current_gtfs_zip_files if 'megabus' not in f.lower()]
+    logging.info(f"Using {len(current_gtfs_zip_files)} GTFS feeds (filtered out problematic feeds)")
+
     # create the r5py transportation network
     current_transportation_network = setup_r5_network(osm_pbf_path=current_osm_pbf_path,
                                                       gtfs_zip_paths=current_gtfs_zip_files)
 
     # dates to use (based on CMAP model documentation)
-    departure_times =  [dt_dt(2025, 12, 9, 0, 30, 0),
-                        dt_dt(2025, 12, 9, 6, 0, 0),
-                        dt_dt(2025, 12, 9, 7, 0, 0),
-                        dt_dt(2025, 12, 9, 9, 0, 0),
-                        dt_dt(2025, 12, 9, 10, 0, 0),
-                        dt_dt(2025, 12, 9, 14, 0, 0),
-                        dt_dt(2025, 12, 9, 16, 0, 0),
-                        dt_dt(2025, 12, 9, 18, 0, 0)]
-
-
+    departure_times = [dt_dt(2025, 12, 9, 0, 30, 0)]
 
     # load origins and destinations
     path_to_taz_geojson = os.path.join(Path(__file__).parent, "input_data", "taz_data", "tazs_centroids.geojson")
@@ -406,23 +435,21 @@ if __name__ == "__main__":
                                r5py.TransportMode.CABLE_CAR,
                                r5py.TransportMode.FERRY]
 
-
     # run analysis for each departure time
     for departure_time in departure_times:
         logging.info(f"Running analysis for departure time: {departure_time}")
-
 
         # analysis name to keep track of each run
         analysis_name = f"current_network_{departure_time.strftime('%Y%m%d_%H%M')}"
         # run the analysis
 
         logging.info("Starting analysis")
-        travel_times_df = run_analysis(
+        travel_times_df = run_analysis(testing_func=calculate_travel_times_chunk,
             r5py_network=current_transportation_network,
             origins_gdf=taz_gdf,
             destinations_gdf=taz_gdf,
             departure_datetime=departure_time,
-            transport_modes= transit_transport_modes
+            transport_modes=transit_transport_modes
         )
 
         # save results to csv
@@ -434,5 +461,24 @@ if __name__ == "__main__":
 
         output_csv_path = os.path.join(travel_times_path, f"{analysis_name}.csv")
         travel_times_df.to_csv(output_csv_path, index=False)
+        logging.info(f"Saved travel times for {analysis_name} to {output_csv_path}")
+
+        detailed_itineraries_df = run_analysis(testing_func=calculate_itineraries_chunk,
+                                       r5py_network=current_transportation_network,
+                                       origins_gdf=taz_gdf,
+                                       destinations_gdf=taz_gdf,
+                                       departure_datetime=departure_time,
+                                       transport_modes=transit_transport_modes
+                                       )
+
+        # save results to csv
+        output_data_dir_path = os.path.join(Path(__file__).parent, "output_data")
+        detailed_itineraries_path = os.path.join(output_data_dir_path, "detailed_itineraries")
+
+        # make sure output directory exists
+        os.makedirs(detailed_itineraries_path, exist_ok=True)
+
+        output_csv_path = os.path.join(detailed_itineraries_path, f"{analysis_name}.csv")
+        detailed_itineraries_df.to_csv(output_csv_path, index=False)
         logging.info(f"Saved travel times for {analysis_name} to {output_csv_path}")
 
