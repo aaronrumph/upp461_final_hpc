@@ -1,0 +1,2 @@
+@echo off
+powershell -c "[Console]::Beep(440, 2000); Start-Sleep -Seconds 10; $player = New-Object System.Media.SoundPlayer 'C:\Users\aaron\Downloads\JAY-Z-4_44-_lyrics_.wav'; $player.PlaySync(); [Console]::Beep(440, 2000)"

@@ -1,4 +1,6 @@
+""" This script just contains the analysis doing to get stop times so that I can run on multiple computers at once"""
 
+""" CHANGE LINE 433 TO CHANGE WHAT TIMEs OF DAY TO RUN THE ANALYSIS FOR """
 
 """ This script is meant to test the performance of the HPC to see whether feasible or not to use detailed
 # itinerary calculations there. It uses a small subset of the data for testing purposes."""
@@ -516,6 +518,9 @@ if __name__ == "__main__":
 
     logging.info("Current network analysis complete")
 
+    from wake_me_up_function import wake_me_up as GET_UP
+    GET_UP()
+    GET_UP()
 
 
 
