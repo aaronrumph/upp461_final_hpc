@@ -430,14 +430,9 @@ if __name__ == "__main__":
                                                       gtfs_zip_paths=current_gtfs_zip_files)
 
     # dates to use (based on CMAP model documentation)
-    departure_times = [dt_dt(2025, 12, 9, 0, 30, 0),
-                       dt_dt(2025, 12, 9, 6, 0, 0),
-                       dt_dt(2025, 12, 9, 7, 0, 0),
-                       dt_dt(2025, 12, 9, 9, 0, 0),
-                       dt_dt(2025, 12, 9, 10, 0, 0),
-                       dt_dt(2025, 12, 9, 14, 00, 0),
-                       dt_dt(2025, 12, 9, 16, 00, 0),
-                       dt_dt(2025, 12, 9, 18, 00, 0)]
+    departure_times = [dt_dt(2025, 12, 9, 14, 30, 0),
+                       dt_dt(2025, 12, 9, 16, 0, 0),
+                       dt_dt(2025, 12, 9, 18, 0, 0)]
 
     # load origins and destinations
     path_to_taz_geojson = os.path.join(Path(__file__).parent, "input_data", "taz_data",
