@@ -123,8 +123,6 @@ logging.debug(f"There are {len(cbd_taz_ids)} tazs in the cbd area")
 logging.info(f"Successfully set up important prerequisites for demand model")
 
 """ Functions to load necessary input data """
-
-
 @time_this_function
 def load_trip_roster(filter_transit_only: bool = True,
                      filter_valid_timeperiod: bool = True,
@@ -163,7 +161,7 @@ def load_trip_roster(filter_transit_only: bool = True,
     # assign time periods to trips with NaN if requested
     if assign_missing_timeperiods:
         nan_mask = trip_roster_df["timeperiod"].isna()
-        num_nan = nan_mask.sum()
+        num_nan = nan_mask.sum()    # the number of NaNs
 
         if num_nan > 0:
             # get distribution from trips that have time periods
@@ -258,7 +256,6 @@ def load_travel_time_matrices(scenario_name: str) -> dict[str, DataFrame]:
 
 
 """ Now we can move on to the actual demand model"""
-
 
 def get_mode_choice_coefficients(trip_purpose: str,
                                  destination_zone_id: int) -> tuple[float, float]:
